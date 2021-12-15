@@ -18,14 +18,17 @@ module send_img(
     begin
         if (reset) begin
             pixel_inx <= 0;
+            tx_btn_pressed <= 0;
+            sender_state <= 0;
+            clk_count <= 0;
         end 
         else begin
             if (tx_btn && ~tx_btn_pressed) begin // tx_btn pressed
-                sender_state <= 3'b000;
+                sender_state <= 3'b111;
                 tx_btn_pressed <= 1;
             end
             case (sender_state)
-                3'b000 : begin
+                3'b111 : begin
                     clk_count <= clk_count + 1;
                     if (clk_count >= 1000) begin // put some delay 
                         clk_count <= 0;
@@ -33,7 +36,7 @@ module send_img(
                         sender_state <= 3'b010; // start tx first byte 
                     end
                     else begin 
-                        sender_state <= 3'b000;
+                        sender_state <= 3'b111;
                     end
                     end
                 3'b001 : begin // state: next byte tx start 
