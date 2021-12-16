@@ -4,13 +4,13 @@ module img_process_tb(
 
     );
     
-reg clk, reset, process_trig;
+reg clk, reset, median_trig;
 wire TxD, blinking_led;
 
 img_process_top processing(
     .clk(clk),
     .reset(reset),
-    .process_trig(process_trig),
+    .median_trig(median_trig),
     .TxD(TxD),
     .blinking_led(blinking_led)
     );
@@ -24,10 +24,10 @@ end
 initial
 begin
     reset = 1; 
-    process_trig = 0; #100;
+    median_trig = 0; #100;
     reset = 0;  #100;
-    process_trig = 1; #10000;
-    process_trig = 0; #13600000;
+    median_trig = 1; #10000;
+    median_trig = 0; #13600000;
     $finish;
 end
 endmodule

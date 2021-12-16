@@ -3,19 +3,27 @@
 module img_process_top(
     clk,
     reset,
-    process_trig,
+    median_trig,
+    sobel_trig,
     TxD,
     blinking_led
     );
     
-    input clk, reset, process_trig;
+    input clk, reset, median_trig, sobel_trig;
     output TxD, blinking_led;
     
-    wire process_finished;
-    wire [13:0] pixel_inx; // address bus used by the filter to access ROM
+    wire median_process_finished, sobel_process_finished; 
+    reg process_finished = 0;
+    wire median_in_process, sobel_in_process;
+    wire [13:0] median_pixel_inx; // address bus used by the median filter to access ROM
+    wire [13:0] sobel_pixel_inx; // address bus used by the sobel filter to access ROM
+    reg [13:0] rom_inx = 0; // address bus leading out from the ROM
     wire [7:0] data_in;
-    wire [13:0] out_inx; // address bus used by the filter to store processed image in BRAM
-    wire [7:0] data_out;
+    wire [13:0] median_out_inx; // address bus used by the median filter to store processed image in BRAM
+    wire [13:0] sobel_out_inx; // address bus used by the sobel filter to store processed image in BRAM
+    wire [7:0] median_data_out; // data bus used by the median filter to BRAM
+    wire [7:0] sobel_data_out; // data bus used by the sobel filter to BRAM
+    reg [7:0] data_out; // data_in bus leading out from the BRAM
     wire [7:0] processed_data_out;
     wire transmit;
     reg [1:0] clk25_count = 0;
@@ -34,27 +42,56 @@ always @ (posedge clk) begin
 end
 
 always @ (posedge clk) begin
-    if (process_finished) begin
+    if (~(median_in_process || sobel_in_process)) begin
         ram_inx <= sender_inx;
+        rom_inx <= 0;
+        data_out <= 0;
     end else begin
-        ram_inx <= out_inx;
+        if (median_in_process) begin
+            ram_inx <= median_out_inx;
+            data_out <= median_data_out;
+            rom_inx <= median_pixel_inx;
+        end else if (sobel_in_process) begin
+            ram_inx <= sobel_out_inx;
+            data_out <= sobel_data_out;
+            rom_inx <= sobel_pixel_inx;
+        end
+    end
+    
+    if (median_process_finished || sobel_process_finished) begin
+        process_finished <= 1;
+    end else begin
+        process_finished <= 0;
     end
 end
 
 median_filter median_filter(
         .clk(clk_25MHz),
         .reset(reset),
-        .process_trig(process_trig),
+        .process_trig(median_trig),
         .data_in(data_in),
-        .pixel_inx(pixel_inx),
-        .out_inx(out_inx),
-        .data_out(data_out),
-        .process_finished(process_finished)
+        .pixel_inx(median_pixel_inx),
+        .out_inx(median_out_inx),
+        .data_out(median_data_out),
+        .in_process(median_in_process),
+        .process_finished(median_process_finished)
+    );
+
+sobel_filter sobel_filter(
+        .clk(clk_25MHz),
+        .reset(reset),
+        .process_trig(sobel_trig),
+        .data_in(data_in),
+        .pixel_inx(sobel_pixel_inx),
+        .out_inx(sobel_out_inx),
+        .data_out(sobel_data_out),
+        .in_process(sobel_in_process),
+        .process_finished(sobel_process_finished)
     );
     
 bram_img_rom IMGROM(
         .clka(clk),
-        .addra(pixel_inx),
+        .addra(rom_inx),
         .douta(data_in),
         .ena(1)
     );

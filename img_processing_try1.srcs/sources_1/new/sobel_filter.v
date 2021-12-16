@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module median_filter(
+module sobel_filter(
     clk,
     reset,
     process_trig,
@@ -19,11 +19,13 @@ module median_filter(
     output reg [13:0] out_inx = 0; // inx to write output img
     output reg in_process = 0;
     output reg process_finished = 0;
-//    reg [13:0] clk_count;
+    
     reg [4:0] process_state;
     reg [7:0] window[8:0];
     reg [4:0] window_inx;
-    reg [7:0] temp;
+    reg signed [31:0] Gx_mask[8:0]; // Gx mask
+    reg signed [31:0] Gy_mask[8:0]; // Gy mask
+    reg signed [31:0] Gx, Gy; // Gx pixel, Gy pixel
     reg [3:0] i,j;
     reg process_trig_pressed = 0;
     
@@ -34,7 +36,14 @@ module median_filter(
             window[0] <= 0; window[1] <= 0; window[2] <= 0;
             window[3] <= 0; window[4] <= 0; window[5] <= 0;
             window[6] <= 0; window[7] <= 0; window[8] <= 0;
-            window_inx <= 0; temp <= 0; i <= 0; j <= 0;
+            Gx_mask[0] <= 0; Gx_mask[1] <= 0; Gx_mask[2] <= 0;
+            Gx_mask[3] <= 0; Gx_mask[4] <= 0; Gx_mask[5] <= 0;
+            Gx_mask[6] <= 0; Gx_mask[7] <= 0; Gx_mask[8] <= 0;
+            Gy_mask[0] <= 0; Gy_mask[1] <= 0; Gy_mask[2] <= 0;
+            Gy_mask[3] <= 0; Gy_mask[4] <= 0; Gy_mask[5] <= 0;
+            Gy_mask[6] <= 0; Gy_mask[7] <= 0; Gy_mask[8] <= 0;
+            Gx <= 0; Gy <= 0;
+            window_inx <= 0; i <= 0; j <= 0;
             process_trig_pressed <= 0; in_process <= 0; process_finished <= 0;
         end
         else begin
@@ -91,27 +100,43 @@ module median_filter(
                         process_state <= 5'd3;
                     end
                     end
-                5'd6 : begin // median filter processing kernel
-                    if (window[j] > window[j + 1]) begin 
-                        temp <= window[j]; // swap
-                        window[j] <= window[j + 1];
-                        window[j + 1] <= temp;
+                5'd6 : begin // generate Gx_mask and Gy_mask 
+                    Gx_mask[0] <= window[0] * 1;
+                    Gx_mask[1] <= window[1] * 0;
+                    Gx_mask[2] <= window[2] * -1;
+                    Gx_mask[3] <= window[3] * 2;
+                    Gx_mask[4] <= window[4] * 0;
+                    Gx_mask[5] <= window[5] * -2;
+                    Gx_mask[6] <= window[6] * 1;
+                    Gx_mask[7] <= window[7] * 0;
+                    Gx_mask[8] <= window[8] * -1;
+                    
+                    Gy_mask[0] <= window[0] * -1;
+                    Gy_mask[1] <= window[1] * -2;
+                    Gy_mask[2] <= window[2] * -1;
+                    Gy_mask[3] <= window[3] * 0;
+                    Gy_mask[4] <= window[4] * 0;
+                    Gy_mask[5] <= window[5] * 0;
+                    Gy_mask[6] <= window[6] * 1;
+                    Gy_mask[7] <= window[7] * 2;
+                    Gy_mask[8] <= window[8] * 1;
+                    
+                    process_state <= 5'd11;
                     end
-                    j <= j + 1;
-                    if (j >= 7) begin
-                        process_state <= 5'd11;
-                        j <= 0;
-                    end else begin
-                        process_state <= 5'd6;
-                    end
-                    end
-                5'd7 : begin // clear window[]
+                5'd7 : begin // clear window[], Gx_mask[] and Gy_mask[]
                     window[0] <= 0; window[1] <= 0; window[2] <= 0;
                     window[3] <= 0; window[4] <= 0; window[5] <= 0;
                     window[6] <= 0; window[7] <= 0; window[8] <= 0;
+                    Gx_mask[0] <= 0; Gx_mask[1] <= 0; Gx_mask[2] <= 0;
+                    Gx_mask[3] <= 0; Gx_mask[4] <= 0; Gx_mask[5] <= 0;
+                    Gx_mask[6] <= 0; Gx_mask[7] <= 0; Gx_mask[8] <= 0;
+                    Gy_mask[0] <= 0; Gy_mask[1] <= 0; Gy_mask[2] <= 0;
+                    Gy_mask[3] <= 0; Gy_mask[4] <= 0; Gy_mask[5] <= 0;
+                    Gy_mask[6] <= 0; Gy_mask[7] <= 0; Gy_mask[8] <= 0;
+                    Gx <= 0; Gy <= 0;
                     process_state <= 5'd8;
                     end
-                5'd8 : begin
+                5'd8 : begin // increment out_inx and check if bigger than 9999
                     out_inx <= out_inx + 1;
                     if (out_inx > 9999) begin
                         process_state <= 5'd10;
@@ -120,24 +145,31 @@ module median_filter(
                         process_state <= 5'd2;
                     end
                     end
-                5'd10 : begin
-                        in_process <= 0;
-                        process_finished <= 1;
+                5'd10 : begin // process finished 
+                    in_process <= 0;
+                    process_finished <= 1;
                     end
-                5'd11 : begin // state to increment i and check if it's bigger than 9
-                        i <= i + 1;
-                        if (i >= 7) begin
-                            data_out <= window[4];
-                            process_state <= 5'd7;
-                            i <= 0; 
-                            j <= 0;
+                5'd11 : begin // add all Gx_mask to get Gx, add all Gy_mask to get Gy
+                    Gx <= Gx_mask[0] + Gx_mask[1] + Gx_mask[2] + Gx_mask[3] + Gx_mask[4] + Gx_mask[5] + Gx_mask[6] + Gx_mask[7] + Gx_mask[8];
+                    Gy <= Gy_mask[0] + Gy_mask[1] + Gy_mask[2] + Gy_mask[3] + Gy_mask[4] + Gy_mask[5] + Gy_mask[6] + Gy_mask[7] + Gy_mask[8];
+                    process_state <= 5'd12;
+                    end
+                5'd12 : begin // add Gx and Gy to get data_out
+                    if (Gx + Gy > 255) begin
+                        data_out <= 255;
+                    end else if (Gx + Gy < 0) begin
+                        if (Gx + Gy < -255) begin
+                            data_out <= 255;
                         end else begin
-                            process_state <= 5'd6;
+                            data_out <= -(Gx + Gy);
                         end
+                    end else begin
+                        data_out <= Gx + Gy;
+                    end
+                    process_state <= 5'd7;
                     end
                 default : ;
             endcase
         end
     end
 endmodule
-
